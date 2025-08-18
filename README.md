@@ -65,12 +65,12 @@ python main.py
 .
 ├── data/
 │   └── data_preprocessing.py   # Script for data loading and preprocessing
+|   └── dataset.xlsx            # (Required) The raw data file
 ├── utils/
 │   ├── analysis_data.py        # Core analysis pipeline (MI, model evaluation)
 │   ├── estimate_MI_score.py    # Functions for Mutual Information calculation
 │   └── visualize_results.py    # Functions for results visualization
 ├── main.py                     # Main script to run the entire pipeline
-└── dataset.xlsx                # (Required) The raw data file
 ```
 
 ### Key File Descriptions
