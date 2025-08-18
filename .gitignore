@@ -1,0 +1,54 @@
+
+dataset.xlsx
+
+data/dataset.xlsx
+
+# ----------------------------------------------------------------
+# Python 관련
+# ----------------------------------------------------------------
+# 파이썬 캐시 파일
+__pycache__/
+*.py[cod]
+
+# 컴파일된 파이썬 파일
+*.pyo
+*.pyd
+
+# Egg 파일 (빌드/배포)
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# 가상환경 폴더
+venv/
+env/
+.venv/
+.env/
+
+
+# VSCode
+.vscode/
+
+# PyCharm
+.idea/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+
+
+*.log
+
+*.swp
+*.tmp
