@@ -1,7 +1,6 @@
 import torch
-
-from utils.visualize_results import plot_combined_metric_results, plot_performance_with_error_bars
-from utils.analysis_data import run_analysis_pipeline
+from utils.visualize_results import plot_combined_metric_results, plot_performance_with_error_bars, visulaize_scenario
+from utils.analysis_data import run_analysis_pipeline, run_scenario_analysis
 from data.data_preprocessing import get_features, preprocessing_data
 
 
@@ -35,9 +34,27 @@ if __name__ == "__main__":
     features_for_model_C = [col for col in features_for_model_B if col not in sleep_related_features]
 
     # 2. Analysis pipeline each model
-    results_a, mi_scores_a = run_analysis_pipeline(combined_df_imputed, features_for_model_A, final_target_names, device, "Full_Model")
-    results_b, mi_scores_b = run_analysis_pipeline(combined_df_imputed, features_for_model_B, final_target_names, device, "Clinical_Sleep_Model")
-    results_c, mi_scores_c = run_analysis_pipeline(combined_df_imputed, features_for_model_C, final_target_names, device, "Clinical_Only_Model")
+    results_a, mi_scores_a = run_analysis_pipeline(data_df=combined_df_imputed, 
+                                                   feature_columns_to_use=features_for_model_A, 
+                                                   target_columns_list=final_target_names, 
+                                                   scenario_prefix="Full_Model",
+                                                   device=device, 
+                                                    json_file_name="full_model_results.json"
+                                                   )
+    
+    results_b, mi_scores_b = run_analysis_pipeline(data_df=combined_df_imputed, 
+                                                   feature_columns_to_use=features_for_model_B, 
+                                                   target_columns_list=final_target_names, 
+                                                   scenario_prefix="Clinical_Sleep_Model",
+                                                   device=device, 
+                                                   json_file_name="clinical_sleep_model_results.json")
+    
+    results_c, mi_scores_c = run_analysis_pipeline(data_df=combined_df_imputed, 
+                                                   feature_columns_to_use=features_for_model_C, 
+                                                   target_columns_list=final_target_names, 
+                                                   scenario_prefix="Clinical_Only_Model",
+                                                   device= device, 
+                                                   json_file_name= "clinical_only_model_results.json")
 
     plot_combined_metric_results(results_a, results_b, results_c, metric_name="MSE")
     plot_combined_metric_results(results_a, results_b, results_c, metric_name="RMSE")
@@ -47,3 +64,21 @@ if __name__ == "__main__":
 
     plot_performance_with_error_bars(results_a, results_b, results_c, metric_name="RMSE", target="CMI")
     plot_performance_with_error_bars(results_a, results_b, results_c, metric_name="RMSE", target="VAS")
+
+    # 3. Table 2 Analysis
+    feature_sets = {
+        "Full_Model": features_for_model_A,
+        "Clinical_Sleep_Model": features_for_model_B,
+        "Clinical_Only_Model": features_for_model_C
+    }
+    
+    mi_scores_dict = {
+        "Full_Model": mi_scores_a,
+        "Clinical_Sleep_Model": mi_scores_b,
+        "Clinical_Only_Model": mi_scores_c
+    }
+    final_results_cmi = run_scenario_analysis(combined_df_imputed, feature_sets, 'CMI', mi_scores_dict=mi_scores_dict)
+    final_results_vas = run_scenario_analysis(combined_df_imputed, feature_sets, 'VAS', mi_scores_dict=mi_scores_dict)
+    
+    
+    visulaize_scenario(final_results_cmi=final_results_cmi, final_results_vas=final_results_vas)

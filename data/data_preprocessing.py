@@ -75,7 +75,7 @@ def preprocessing_data():
     # --- Data Loading and Preprocessing ---
     print("\n--- Loading and Preprocessing Data ---")
     try:
-        pure_data = pd.read_excel("dataset.xlsx", sheet_name="sheet1")
+        pure_data = pd.read_excel("data/dataset.xlsx", sheet_name="sheet1")
         print("Dataset loaded successfully.")
     except FileNotFoundError:
         print("Error: dataset.xlsx not found.")

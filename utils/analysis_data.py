@@ -1,17 +1,24 @@
 import torch
+
+import pandas as pd
 import numpy as np
 import json
 import math
 from tqdm import tqdm
-from sklearn.model_selection import KFold
 
 from utils.estimate_MI_score import KL_div_ks_torch, MI_from_divergence_v2
 
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import KFold
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import StratifiedKFold
+
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
+import warnings
+
+# 경고 메시지 무시 (옵션)
+warnings.filterwarnings('ignore', category=FutureWarning)
 
 
 # --- Standardization Function ---
@@ -68,28 +75,48 @@ def select_features_mi_with_permutation_test(X, y, feature_names, n_permutations
     return ranked_features
 
 def evaluate_model_with_kfold(X, y, target_names, n_splits=10, random_state=42):
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+    
+    kf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+    
     results_per_target = {name: {'mse_scores': [], 'rmse_scores': []} for name in target_names}
-    for train_index, test_index in kf.split(X):
+    
+    if y.ndim > 1:
+        y_for_stratify = y[:, 0]
+    else:
+        y_for_stratify = y
+        
+    y_bins = pd.cut(y_for_stratify, bins=10, labels=False, duplicates='drop')
+
+    if pd.isnull(y_bins).any():
+        y_bins = pd.Series(y_bins).fillna(pd.Series(y_bins).mode()[0]).values
+
+    for train_index, test_index in kf.split(X, y_bins):
         X_train, X_test = X[train_index], X[test_index]
         y_train, y_test = y[train_index], y[test_index]
+
         scaler = StandardScaler().fit(X_train)
-        X_train_scaled, X_test_scaled = scaler.transform(X_train), scaler.transform(X_test)
+        X_train_scaled = scaler.transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+
         for i, name in enumerate(target_names):
             model = RandomForestRegressor(n_estimators=100, random_state=random_state, n_jobs=-1)
+            
             model.fit(X_train_scaled, y_train[:, i])
             preds = model.predict(X_test_scaled)
+            
             mse = mean_squared_error(y_test[:, i], preds)
             results_per_target[name]['mse_scores'].append(mse)
             results_per_target[name]['rmse_scores'].append(math.sqrt(mse))
+
     final_results = {}
     for name, scores_dict in results_per_target.items():
         final_results[name] = {
-            'mse': np.mean(scores_dict['mse_scores']), 'rmse': np.mean(scores_dict['rmse_scores']),
-            'mse_std': np.std(scores_dict['mse_scores']), 'rmse_std': np.std(scores_dict['rmse_scores'])
+            'mse': np.mean(scores_dict['mse_scores']), 
+            'rmse': np.mean(scores_dict['rmse_scores']),
+            'mse_std': np.std(scores_dict['mse_scores']), 
+            'rmse_std': np.std(scores_dict['rmse_scores'])
         }
     return final_results
-
 
 def run_analysis_pipeline(data_df, feature_columns_to_use, target_columns_list, scenario_prefix, device, json_file_name=None):
     print(f"\n{'='*30}\nRunning pipeline for: {scenario_prefix}\n{'='*30}")
@@ -98,7 +125,7 @@ def run_analysis_pipeline(data_df, feature_columns_to_use, target_columns_list, 
     features_tensor = torch.tensor(data_for_model_pd.values, dtype=torch.float32)
     targets_tensor = torch.tensor(targets_for_model_pd.values, dtype=torch.float32)
     
-    mi_params = {'mi_func': MI_from_divergence_v2, 'divergence_func': KL_div_ks_torch, 'n_permute': 5, 'min_k': 7, 'max_k': 15, 'Nmid_k': 1, 'run_gpu': -1, 'device': device}
+    mi_params = {'mi_func': MI_from_divergence_v2, 'divergence_func': KL_div_ks_torch, 'n_permute': 5, 'min_k': 7, 'max_k': 15, 'Nmid_k': 1, 'run_gpu': 0, 'device': device}
     ranked_mi_scores = select_features_mi_with_permutation_test(features_tensor, targets_tensor, feature_columns_to_use, n_permutations=1000, **mi_params)
     
     print(f"\n--- {scenario_prefix} - Ranked MI Scores with P-values ---")
@@ -141,10 +168,118 @@ def run_analysis_pipeline(data_df, feature_columns_to_use, target_columns_list, 
         file_name = json_file_name
     else:
         file_name = f"{scenario_prefix}_model_results.json"
+    
     with open(file_name, 'w') as f:
         json.dump(all_model_results, f, indent=4)
     print(f"Results saved to {file_name}")
     
+    file_name_mi = f"{scenario_prefix}_mi_scores.json"
+    with open(file_name_mi, 'w') as f:
+        json.dump([{'feature': name, 'mi_score': score, 'p_value': p_value} for name, score, p_value in ranked_mi_scores], f, indent=4)
+    print(f"MI scores saved to {file_name_mi}")
+    
     return all_model_results, ranked_mi_scores
 
+
+def run_scenario_analysis(data, feature_sets, target_variable, mi_scores_dict):
     
+    print(f"===========================================================")
+    print(f"  Analysis for Target Variable: {target_variable.upper()}  ")
+    print(f"===========================================================")
+
+    # 피처 선택 시나리오 정의
+    scenarios = {
+        "All Features": lambda features, mi_df: features,
+        "MI Top 20": lambda features, mi_df: mi_df[mi_df['feature'].isin(features)]
+                                                .nlargest(20, 'mi_score')['feature'].tolist(),
+        "Significant MI Features": lambda features, mi_df: mi_df[(mi_df['feature'].isin(features)) & (mi_df['p_value'] < 0.05)]['feature'].tolist()
+    }
+    results = {
+        "All Features": {},
+        "MI Top 20": {},
+        "Significant MI Features": {}
+    }
+    for scenario_name, feature_selector in scenarios.items():
+        print(f"\n~~~~~~~~~~~~~~~~ Scenario: {scenario_name} ~~~~~~~~~~~~~~~~")
+        
+        all_model_scores = {}
+        
+        for model_name, initial_features in feature_sets.items():
+            try:
+                # 현재 모델에 해당하는 MI 스코어 리스트를 가져옴
+                if model_name not in mi_scores_dict:
+                    print(f"\nModel: {model_name} - SKIPPED (MI scores not provided)")
+                    continue
+                
+                mi_scores_list = mi_scores_dict[model_name]
+                mi_scores_df = pd.DataFrame(mi_scores_list, columns=['feature', 'mi_score', 'p_value'])
+
+                # 현재 시나리오에 따라 피처 선택
+                current_features = feature_selector(initial_features, mi_scores_df)
+                
+                if not current_features:
+                    print(f"\nModel: {model_name} (Target: {target_variable}) - SKIPPED (No features for this scenario)")
+                    continue
+
+                final_features = list(set(current_features) - {target_variable})
+                X = data[final_features]
+                y = data[target_variable]
+
+                mse_scores, rmse_scores, r2_scores = [], [], []
+                
+                kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+                model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+                
+                y_bins = pd.cut(y, bins=10, labels=False, duplicates='drop')
+                if y_bins.isnull().any():
+                    y_bins = y_bins.fillna(y_bins.mode()[0])
+
+                for train_index, val_index in kf.split(X, y_bins):
+                    X_train, X_val = X.iloc[train_index], X.iloc[val_index]
+                    y_train, y_val = y.iloc[train_index], y.iloc[val_index]
+
+                    model.fit(X_train, y_train)
+                    y_pred = model.predict(X_val)
+
+                    mse = mean_squared_error(y_val, y_pred)
+                    r2 = r2_score(y_val, y_pred)
+
+                    mse_scores.append(mse)
+                    rmse_scores.append(np.sqrt(mse))
+                    r2_scores.append(r2)
+
+                all_model_scores[model_name] = {'MSE': mse_scores, 'RMSE': rmse_scores, 'R2': r2_scores}
+
+                print(f"\nModel: {model_name} (Target: {target_variable})")
+                print(f"  Features used: {len(final_features)}")
+                print(f"  MSE:  {np.mean(mse_scores):.4f} ± {np.std(mse_scores):.4f}")
+                print(f"  RMSE: {np.mean(rmse_scores):.4f} ± {np.std(rmse_scores):.4f}")
+                print(f"  R²:   {np.mean(r2_scores):.4f} ± {np.std(r2_scores):.4f}")
+
+            except Exception as e:
+                print(f"Could not run analysis for {model_name} in scenario '{scenario_name}'. Error: {e}")
+
+        results[scenario_name] = all_model_scores
+        
+        # --- 현재 시나리오에 대한 통계적 비교 ---
+        if len(all_model_scores) > 1:
+            print("\n\n--- Statistical Comparison (Tukey's HSD Test) ---")
+            for metric in ["MSE", "RMSE", "R2"]:
+                scores_data = {model_name: results[metric] for model_name, results in all_model_scores.items()}
+                scores_df = pd.DataFrame(scores_data)
+                
+                data_long = pd.melt(scores_df, var_name='model', value_name='score')
+                
+                tukey_result = pairwise_tukeyhsd(endog=data_long['score'], groups=data_long['model'], alpha=0.05)
+                
+                print(f"\n--- Metric: {metric} (Target: {target_variable}, Scenario: {scenario_name}) ---")
+                print(tukey_result)
+        else:
+            print("\n--- Statistical comparison skipped (less than 2 models succeeded) ---")
+    
+    file_name = f"scenario_analysis_{target_variable}.json"
+    with open(file_name, 'w') as f:
+        json.dump(results, f, indent=4)
+    print(f"\nAll scenario analysis results saved to {file_name}")
+    
+    return results
