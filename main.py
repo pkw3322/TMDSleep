@@ -1,12 +1,12 @@
 import torch
-from utils.visualize_results import plot_combined_metric_results, plot_performance_with_error_bars, visulaize_scenario
+from utils.visualize_results import visulaize_scenario
 from utils.analysis_data import run_analysis_pipeline, run_scenario_analysis
 from data.data_preprocessing import get_features, preprocessing_data
 
 
 if __name__ == "__main__":
     # --- GPU Setup ---
-    run_gpu = 6 # GPU ID for MI calculation, -1 for CPU
+    run_gpu = 0 # GPU ID for MI calculation, -1 for CPU
     print(f"PyTorch version: {torch.__version__}")
     print(f"CUDA available: {torch.cuda.is_available()}")
     if torch.cuda.is_available() and run_gpu >= 0:
