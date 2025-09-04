@@ -23,7 +23,7 @@ def convert_value(df, col_name, row_idx, mean_morning_type_val, mean_mouth_openi
         elif isinstance(val, str) and val.strip().startswith("1"): converted_val = 1
         elif is_convertible_to_float(val): converted_val = float(val)
         else: converted_val = 0
-    elif col_name == "Morning type": converted_val = mean_morning_type_val if pd.isna(val) else (float(val) if is_convertible_to_float(val) else mean_morning_type_val)
+    elif col_name == "Morning person": converted_val = mean_morning_type_val if pd.isna(val) else (float(val) if is_convertible_to_float(val) else mean_morning_type_val)
     elif isinstance(col_name, str) and (col_name.startswith("PSQI") or col_name == "Poor sleeper"):
         psqi_base_cols_for_avg = [f"PSQI{i}" for i in range(1, 8)]
         sum_psqi, cnt_psqi = 0, 0
@@ -115,11 +115,11 @@ def preprocessing_data():
 
 
 
-    mean_morning_type = calculate_columns_mean("Morning type", data)
+    mean_morning_type = calculate_columns_mean("Morning person", data)
     mean_mouth_opening = calculate_columns_mean("Mouth opening ", data)
 
     object_columns = data.select_dtypes(include=['object']).columns.tolist()
-    special_numeric_cols = ["Bilateral pain ", "Morning type", "Mouth opening "]
+    special_numeric_cols = ["Bilateral pain ", "Morning person", "Mouth opening "]
     psqi_related_cols = [c for c in data.columns if isinstance(c, str) and (c.startswith("PSQI") or c == "Poor sleeper")]
     contributing_factor_cols = ["Bruxism","Clenching", "Psychological stress","Tinnitus"]
     cols_to_convert = list(set(object_columns + special_numeric_cols + psqi_related_cols + contributing_factor_cols))

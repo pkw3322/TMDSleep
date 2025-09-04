@@ -6,7 +6,7 @@ from data.data_preprocessing import get_features, preprocessing_data
 
 if __name__ == "__main__":
     # --- GPU Setup ---
-    run_gpu = 0 # GPU ID for MI calculation, -1 for CPU
+    run_gpu = 6 # GPU ID for MI calculation, -1 for CPU
     print(f"PyTorch version: {torch.__version__}")
     print(f"CUDA available: {torch.cuda.is_available()}")
     if torch.cuda.is_available() and run_gpu >= 0:
@@ -55,15 +55,6 @@ if __name__ == "__main__":
                                                    scenario_prefix="Clinical_Only_Model",
                                                    device= device, 
                                                    json_file_name= "clinical_only_model_results.json")
-
-    plot_combined_metric_results(results_a, results_b, results_c, metric_name="MSE")
-    plot_combined_metric_results(results_a, results_b, results_c, metric_name="RMSE")
-
-    plot_performance_with_error_bars(results_a, results_b, results_c, metric_name="MSE", target="CMI")
-    plot_performance_with_error_bars(results_a, results_b, results_c, metric_name="MSE", target="VAS")
-
-    plot_performance_with_error_bars(results_a, results_b, results_c, metric_name="RMSE", target="CMI")
-    plot_performance_with_error_bars(results_a, results_b, results_c, metric_name="RMSE", target="VAS")
 
     # 3. Table 2 Analysis
     feature_sets = {
