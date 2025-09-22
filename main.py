@@ -1,12 +1,11 @@
 import torch
-from utils.visualize_results import visulaize_scenario
 from utils.analysis_data import run_analysis_pipeline, run_scenario_analysis
 from data.data_preprocessing import get_features, preprocessing_data
 
 
 if __name__ == "__main__":
     # --- GPU Setup ---
-    run_gpu = 0 # GPU ID for MI calculation, -1 for CPU
+    run_gpu = 1 # GPU ID for MI calculation, -1 for CPU
     print(f"PyTorch version: {torch.__version__}")
     print(f"CUDA available: {torch.cuda.is_available()}")
     if torch.cuda.is_available() and run_gpu >= 0:
@@ -39,7 +38,7 @@ if __name__ == "__main__":
                                                    target_columns_list=final_target_names, 
                                                    scenario_prefix="Full_Model",
                                                    device=device, 
-                                                    json_file_name="full_model_results.json"
+                                                    json_file_name="Full_Model_model_results.json"
                                                    )
     
     results_b, mi_scores_b = run_analysis_pipeline(data_df=combined_df_imputed, 
@@ -47,14 +46,14 @@ if __name__ == "__main__":
                                                    target_columns_list=final_target_names, 
                                                    scenario_prefix="Clinical_Sleep_Model",
                                                    device=device, 
-                                                   json_file_name="clinical_sleep_model_results.json")
-    
+                                                   json_file_name="Clinical_Sleep_Model_model_results.json")
+
     results_c, mi_scores_c = run_analysis_pipeline(data_df=combined_df_imputed, 
                                                    feature_columns_to_use=features_for_model_C, 
                                                    target_columns_list=final_target_names, 
                                                    scenario_prefix="Clinical_Only_Model",
                                                    device= device, 
-                                                   json_file_name= "clinical_only_model_results.json")
+                                                   json_file_name= "Clinical_Only_Model_model_results.json")
 
     # 3. Table 2 Analysis
     feature_sets = {
@@ -71,5 +70,3 @@ if __name__ == "__main__":
     final_results_cmi = run_scenario_analysis(combined_df_imputed, feature_sets, 'CMI', mi_scores_dict=mi_scores_dict)
     final_results_vas = run_scenario_analysis(combined_df_imputed, feature_sets, 'VAS', mi_scores_dict=mi_scores_dict)
     
-    
-    visulaize_scenario(final_results_cmi=final_results_cmi, final_results_vas=final_results_vas)

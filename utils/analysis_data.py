@@ -1,5 +1,5 @@
 import torch
-
+import traceback
 import pandas as pd
 import numpy as np
 import json
@@ -50,7 +50,11 @@ def calculate_mi_once(feature_2d, y_scaled, **kwargs):
     try:
         mi_val = kwargs['mi_func'](feature_2d, y_scaled, **kwargs).item()
         return mi_val if not (np.isnan(mi_val) or np.isinf(mi_val)) else -np.inf
-    except Exception:
+    except Exception as e:
+        print(f"\n---!!! ERROR in calculate_mi_once !!!---")
+        print(f"ERROR: {e}")
+        traceback.print_exc()
+        print(f"--------------------------------------------------\n")
         return -np.inf
 
 def select_features_mi_with_permutation_test(X, y, feature_names, n_permutations=100, **kwargs_for_mi):
@@ -78,7 +82,7 @@ def evaluate_model_with_kfold(X, y, target_names, n_splits=10, random_state=42):
     
     kf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     
-    results_per_target = {name: {'mse_scores': [], 'rmse_scores': []} for name in target_names}
+    results_per_target = {name: {'mse_scores': [], 'rmse_scores': [], 'r2_scores': []} for name in target_names}
     
     if y.ndim > 1:
         y_for_stratify = y[:, 0]
@@ -90,7 +94,8 @@ def evaluate_model_with_kfold(X, y, target_names, n_splits=10, random_state=42):
     if pd.isnull(y_bins).any():
         y_bins = pd.Series(y_bins).fillna(pd.Series(y_bins).mode()[0]).values
 
-    for train_index, test_index in kf.split(X, y_bins):
+    y_bins_np = np.array(y_bins)
+    for train_index, test_index in kf.split(X, y_bins_np):
         X_train, X_test = X[train_index], X[test_index]
         y_train, y_test = y[train_index], y[test_index]
 
@@ -105,8 +110,10 @@ def evaluate_model_with_kfold(X, y, target_names, n_splits=10, random_state=42):
             preds = model.predict(X_test_scaled)
             
             mse = mean_squared_error(y_test[:, i], preds)
+            r2 = r2_score(y_test[:, i], preds)
             results_per_target[name]['mse_scores'].append(mse)
             results_per_target[name]['rmse_scores'].append(math.sqrt(mse))
+            results_per_target[name]['r2_scores'].append(r2)
 
     final_results = {}
     for name, scores_dict in results_per_target.items():
@@ -114,7 +121,12 @@ def evaluate_model_with_kfold(X, y, target_names, n_splits=10, random_state=42):
             'mse': np.mean(scores_dict['mse_scores']), 
             'rmse': np.mean(scores_dict['rmse_scores']),
             'mse_std': np.std(scores_dict['mse_scores']), 
-            'rmse_std': np.std(scores_dict['rmse_scores'])
+            'rmse_std': np.std(scores_dict['rmse_scores']),
+            'r2': np.mean(scores_dict['r2_scores']),
+            'r2_std': np.std(scores_dict['r2_scores']),
+            'mse_scores': scores_dict['mse_scores'],
+            'rmse_scores': scores_dict['rmse_scores'],
+            'r2_scores': scores_dict['r2_scores']
         }
     return final_results
 
@@ -125,7 +137,7 @@ def run_analysis_pipeline(data_df, feature_columns_to_use, target_columns_list, 
     features_tensor = torch.tensor(data_for_model_pd.values, dtype=torch.float32)
     targets_tensor = torch.tensor(targets_for_model_pd.values, dtype=torch.float32)
     
-    mi_params = {'mi_func': MI_from_divergence_v2, 'divergence_func': KL_div_ks_torch, 'n_permute': 5, 'min_k': 7, 'max_k': 15, 'Nmid_k': 1, 'run_gpu': 0, 'device': device}
+    mi_params = {'mi_func': MI_from_divergence_v2, 'divergence_func': KL_div_ks_torch, 'n_permute': 5, 'min_k': 7, 'max_k': 15, 'Nmid_k': 1, 'device': device}
     ranked_mi_scores = select_features_mi_with_permutation_test(features_tensor, targets_tensor, feature_columns_to_use, n_permutations=1000, **mi_params)
     
     print(f"\n--- {scenario_prefix} - Ranked MI Scores with P-values ---")
@@ -148,7 +160,8 @@ def run_analysis_pipeline(data_df, feature_columns_to_use, target_columns_list, 
         X_top20 = data_for_model_pd[top_20_features].values
         all_model_results['MI Top 20'] = evaluate_model_with_kfold(X_top20, Y_all, target_columns_list)
     else:
-        all_model_results['MI Top 20'] = {}
+        all_model_results['MI Top 20'] = evaluate_model_with_kfold(X_all, Y_all, target_columns_list)
+        print("  Not enough valid MI features for Top 20 scenario. Using all features instead.")
         
     # [새로운 시나리오] 시나리오 3: 유의미한 MI 변수 (p < 0.05)
     print(f"\n--- {scenario_prefix} - Scenario: Significant MI Features (p < 0.05) ---")
@@ -274,10 +287,15 @@ def run_scenario_analysis(data, feature_sets, target_variable, mi_scores_dict):
                 
                 print(f"\n--- Metric: {metric} (Target: {target_variable}, Scenario: {scenario_name}) ---")
                 print(tukey_result)
+                save_path = f"TukeyHSD_{target_variable}_{scenario_name}_{metric}.txt"
+                with open(save_path, 'w') as f:
+                    f.write(str(tukey_result))
+                print(f"  Tukey HSD results saved to {save_path}")
         else:
             print("\n--- Statistical comparison skipped (less than 2 models succeeded) ---")
     
     file_name = f"scenario_analysis_{target_variable}.json"
+    
     with open(file_name, 'w') as f:
         json.dump(results, f, indent=4)
     print(f"\nAll scenario analysis results saved to {file_name}")

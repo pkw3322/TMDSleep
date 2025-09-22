@@ -71,11 +71,11 @@ def get_features():
                             "STOP-Bang1", "STOP-Bang2", "STOP-Bang3", "STOP-Bang4", "STOP-Bang5", "STOP-Bang6", "STOP-Bang7", "STOP-Bang8", "STOP-Bang score", "High risk for OSA"]
     return target_columns, excluded_features, patient_report_features, sleep_related_features
 
-def preprocessing_data():
+def preprocessing_data(file_path="data/dataset.xlsx"):
     # --- Data Loading and Preprocessing ---
     print("\n--- Loading and Preprocessing Data ---")
     try:
-        pure_data = pd.read_excel("data/dataset.xlsx", sheet_name="sheet1")
+        pure_data = pd.read_excel(file_path, sheet_name="sheet1")
         print("Dataset loaded successfully.")
     except FileNotFoundError:
         print("Error: dataset.xlsx not found.")

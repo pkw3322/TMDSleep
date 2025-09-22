@@ -2,26 +2,29 @@ import numpy as np
 import torch
 
     
-def Distance_cal(data1, data2, return_sq = False, run_gpu=-1):
+
+def Distance_cal(data1, data2, return_sq=False):
     n1, dim = data1.shape
     n2 = data2.shape[0]
-    if run_gpu < 0:
-        run_gpu = data1.device.index
-    dev = 'cuda:' + str(run_gpu)
-    dists = torch.zeros([n1,n2], device=dev)
-    if run_gpu != data1.device.index:
-        run_cuda = 'cuda:' + str(run_gpu)
-        for id in range(dim):
-            dists += ((data1[:,id].reshape([-1,1]) - data2[:,id].reshape([1,-1]))**2).to(run_cuda)
-    else:
-        for id in range(dim):
-            dists += (data1[:,id].reshape([-1,1]) - data2[:,id].reshape([1,-1]))**2
+
+    
+    target_device = data1.device
+    
+    data1_exp = data1.unsqueeze(1)
+    data2_exp = data2.unsqueeze(0)
+    
+    diffs = data1_exp - data2_exp
+    
+    dists_sq = torch.sum(diffs**2, dim=-1).to(device=target_device)
+
     if return_sq:
-        return dists
-    return torch.sqrt(dists)
+        return dists_sq
+    
+    eps = 1e-9
+    return torch.sqrt(dists_sq + eps).to(device=target_device)
 
 # get the indexes to the nearest neighbors (from data1 to (data1 and data2)) up to 20th
-def get_nns_idxes(data1, data2, num_k1=20, num_k2=20, mc_chunk_size=10000, run_gpu=-1):
+def get_nns_idxes(data1, data2, num_k1=20, num_k2=20, mc_chunk_size=10000):
     # nearest neighbors
 
     datanum1 = len(data1)
@@ -41,19 +44,19 @@ def get_nns_idxes(data1, data2, num_k1=20, num_k2=20, mc_chunk_size=10000, run_g
     #     print(imc, imc*mc_chunk_size, (imc + 1)*mc_chunk_size)
         tst_idxes = np.arange(imc*mc_chunk_size, \
                               np.min([(imc + 1)*mc_chunk_size, mc_datanum]))
-        dists = Distance_cal(mc_data[tst_idxes], mc_data, run_gpu=run_gpu)
+        dists = Distance_cal(mc_data[tst_idxes], mc_data)
         # get k1 + 1 nearest neighbors and throw away the first nearest neighbor
-        nn_i1s = torch.topk(dists, k = num_k1+1, axis=1, largest=False, sorted=True).indices
+        nn_i1s = torch.topk(dists, k = num_k1+1, dim=1, largest=False, sorted=True).indices
         nn_i1s_append = torch.cat([nn_i1s_append, nn_i1s[:,1:]], dim=0)
         # get k2 nearest neighbors
-        dists = Distance_cal(mc_data[tst_idxes], target_data2, run_gpu=run_gpu)
-        nn_i2s = torch.topk(dists, k = num_k2, axis=1, largest=False, sorted=True).indices
+        dists = Distance_cal(mc_data[tst_idxes], target_data2)
+        nn_i2s = torch.topk(dists, k = num_k2, dim=1, largest=False, sorted=True).indices
         nn_i2s_append = torch.cat([nn_i2s_append, nn_i2s], dim=0)
 
     return nn_i1s_append, nn_i2s_append
 
 # get nearest neighbor distances (from data1 to data2) up to 20th
-def get_nn_idxes_self(data1, num_k=20, mc_chunk_size=10000, run_gpu=-1):
+def get_nn_idxes_self(data1, num_k=20, mc_chunk_size=10000):
     # Nearest neighbor
     datanum1 = len(data1)
     num_k = np.min([num_k, datanum1 - 1])
@@ -69,39 +72,36 @@ def get_nn_idxes_self(data1, num_k=20, mc_chunk_size=10000, run_gpu=-1):
         tst_idxes = np.arange(imc*mc_chunk_size, \
                               np.min([(imc + 1)*mc_chunk_size, mc_datanum]))
         # get k nearest neighbors
-        dists = Distance_cal(mc_data[tst_idxes], target_data, run_gpu=run_gpu)
+        dists = Distance_cal(mc_data[tst_idxes], target_data)
 #         print(dists)
-        nn_i1s = torch.topk(dists, k = num_k+1, axis=1, largest=False, sorted=True).indices
+        nn_i1s = torch.topk(dists, k = num_k+1, dim=1, largest=False, sorted=True).indices
         nn_i1s_append = torch.cat([nn_i1s_append, nn_i1s[:,1:]], dim=0)
     return nn_i1s_append
 
 # average of estimators for various ks
-def entropy_ks_torch(data1, min_k=1, max_k=3, Nmid_k=0, nn_i1s=[], run_gpu=-1):
-    if run_gpu < 0:
-        run_gpu = data1.device.index
+def entropy_ks_torch(data1, min_k=1, max_k=3, Nmid_k=0, nn_i1s=[]):
     if len(data1.shape) == 1:
         data1 = data1.reshape([-1,1])
     dim = data1.shape[1]
     mc_datanum = len(data1)
     if len(nn_i1s) == 0:
-        nn_i1s = get_nn_idxes_self(data1, max_k, run_gpu=run_gpu)  # required_grad == False
+        nn_i1s = get_nn_idxes_self(data1, max_k)  # required_grad == False
 
-    dev = 'cuda:' + str(run_gpu)
     loggamma = dim/2.*torch.log(torch.tensor(torch.pi)) - torch.special.gammaln(torch.tensor(dim/2. + 1.))
-    
-    ent_est = torch.tensor(0., device=dev) # initialize
+
+    ent_est = torch.tensor(0., device=data1.device) # initialize
     if Nmid_k < 0:
         Nmid_k = 0
     if min_k == max_k:
         Nmid_k = -1
     ks = np.linspace(min_k-1, max_k-1, Nmid_k+2, dtype=int)
     for ik in ks:
-        nn_d1s = torch.sqrt(torch.sum((data1 - data1[nn_i1s[:,ik].long()])**2, axis=1))
+        nn_d1s = torch.sqrt(torch.sum((data1 - data1[nn_i1s[:,ik].long()])**2, dim=1))
         ent_est += dim*torch.sum(torch.log(nn_d1s))/mc_datanum - torch.digamma(torch.tensor(ik+1))
     ent_est = ent_est/len(ks) + loggamma + torch.log(torch.tensor(mc_datanum-1))
     return ent_est, nn_i1s
 
-def KL_div_ks_torch(data1, data2, min_k=1, max_k=3, Nmid_k=0, nn_i1s=[], nn_i2s=[], return_nns=True, run_gpu=-1, **ignore):
+def KL_div_ks_torch(data1, data2, min_k=1, max_k=3, Nmid_k=0, nn_i1s=[], nn_i2s=[], return_nns=True, **ignore):
     if len(data1.shape) == 1:
         data1 = data1.reshape([-1,1])
     if len(data2.shape) == 1:
@@ -112,66 +112,52 @@ def KL_div_ks_torch(data1, data2, min_k=1, max_k=3, Nmid_k=0, nn_i1s=[], nn_i2s=
     mc_datanum = len(data1)
     min_k=min(min_k, datanum1-1, datanum2)
     max_k=min(max_k, datanum1-1, datanum2)
-    if run_gpu < 0:
-        run_gpu = data1.device.index
+  
     if len(nn_i1s) == 0:
-        # get_nns_idxes 함수가 max_k+1 이 아니라 max_k 를 요구할 수 있으니 확인 필요
-        nn_i1s, nn_i2s = get_nns_idxes(data1, data2, max_k, max_k, run_gpu=run_gpu) # k번째 이웃까지 필요
+        nn_i1s, nn_i2s = get_nns_idxes(data1, data2, max_k, max_k)
 
-    # dev = 'cuda:' + str(run_gpu) # 아래에서 data1.device 사용으로 대체 가능
-    current_device = data1.device # 입력 데이터와 동일한 장치 사용
+    current_device = data1.device
     KL_est = torch.tensor(0., device=current_device) # initialize
 
-    # --- Epsilon 추가 ---
-    eps = 1e-9 # 수치적 안정성을 위한 작은 값 (1e-8 ~ 1e-10 사이에서 조정 가능)
+    eps = 1e-9 
 
     if Nmid_k < 0: Nmid_k = 0
     if min_k == max_k: Nmid_k = -1
-    # k 값 범위 확인: indices는 0부터 시작하므로 k-1 ~ max_k-1
     ks = np.linspace(min_k-1, max_k-1, Nmid_k+2, dtype=int)
-    valid_k_count = 0 # 유효한 k 개수 카운트
-
+    valid_k_count = 0 
+    
     for ik in ks:
-        # k 값 유효성 재확인 (nn_i1s, nn_i2s의 크기보다 작아야 함)
         if ik >= nn_i1s.shape[1] or ik >= nn_i2s.shape[1]:
              print(f"Warning: Skipping k index {ik} (k={ik+1}) as it exceeds nn index dimensions ({nn_i1s.shape[1]}, {nn_i2s.shape[1]})")
              continue
 
         try:
-            # 제곱 거리 계산
-            sq_dist1 = torch.sum((data1 - data1[nn_i1s[:,ik].long()])**2, axis=1)
-            sq_dist2 = torch.sum((data1 - data2[nn_i2s[:,ik].long()])**2, axis=1)
+            sq_dist1 = torch.sum((data1 - data1[nn_i1s[:,ik].long()])**2, dim=1)
+            sq_dist2 = torch.sum((data1 - data2[nn_i2s[:,ik].long()])**2, dim=1)
 
-            # --- Epsilon 추가 ---
-            # 제곱근 계산 전에 epsilon 더하기
             nn_d1s = torch.sqrt(sq_dist1 + eps)
             nn_d2s = torch.sqrt(sq_dist2 + eps)
 
-            # --- Epsilon 추가 (선택 사항, 추가 안정성) ---
-            # 로그 계산 전에 epsilon 더하기
             log_u1s = torch.log(nn_d1s + eps)
             log_u2s = torch.log(nn_d2s + eps)
 
-            # NaN/Inf 발생 시 처리 (Epsilon 추가 후 발생 가능성 낮아짐)
             term = log_u2s - log_u1s
             if torch.isnan(term).any() or torch.isinf(term).any():
                 print(f"Warning: NaN/Inf detected in log term for k={ik+1}. Clamping values.")
                 term = torch.nan_to_num(term, nan=0.0, posinf=100.0, neginf=-100.0) # 예시: 큰 값으로 제한
 
             KL_est += torch.sum(term)
-            valid_k_count += 1 # 유효하게 계산된 k 증가
+            valid_k_count += 1
 
         except IndexError as e:
              print(f"Error accessing nearest neighbor indices for k index {ik} (k={ik+1}): {e}")
-             continue # 다음 k로 넘어감
+             continue
 
-    # 유효한 k가 하나도 없으면 0 반환 (또는 에러 처리)
     if valid_k_count == 0:
         print("Warning: No valid k values processed in KL divergence estimation. Returning 0.")
         if return_nns: return torch.tensor(0., device=current_device), nn_i1s, nn_i2s
         else: return torch.tensor(0., device=current_device)
 
-    # 최종 계산 시 유효한 k 개수로 나누기
     KL_est = dim * KL_est / mc_datanum / valid_k_count + torch.log(torch.tensor(datanum2, device=current_device)) - torch.log(torch.tensor(datanum1 - 1, device=current_device))
 
     if return_nns:
@@ -179,12 +165,11 @@ def KL_div_ks_torch(data1, data2, min_k=1, max_k=3, Nmid_k=0, nn_i1s=[], nn_i2s=
     return KL_est
 
 def MI_from_divergence(feature1, feature2, divergence_func, n_permute=1, return_nns=False, indices = {}, 
-                       run_gpu=-1, *args, **kwargs):
+                    *args, **kwargs):
     # I(X;Y) = KL(p(x,y)||p(x)p(y))
     assert len(feature1) == len(feature2)
-    if run_gpu < 0:
-        run_gpu = feature1.device.index
-    dev = 'cuda:' + str(run_gpu)
+
+    dev = feature1.device
     if len(feature1.shape) == 1:
         feature1 = feature1.reshape([-1,1])
     if len(feature2.shape) == 1:
@@ -226,12 +211,11 @@ def MI_from_divergence(feature1, feature2, divergence_func, n_permute=1, return_
     return MI_est / n_permute
 
 def MI_from_divergence_v2(feature1, feature2, divergence_func, n_permute=1, fix_data1=False, return_nns=False, indices = {}, 
-                       run_gpu=-1, *args, **kwargs):
+                       *args, **kwargs):
     # I(X;Y) = KL(p(x,y)||p(x)p(y))
     assert len(feature1) == len(feature2)
-    if run_gpu < 0:
-        run_gpu = feature1.device.index
-    dev = 'cuda:' + str(run_gpu)
+    dev = feature1.device
+    
     N = len(feature1)
     if len(feature1.shape) == 1:
         feature1 = feature1.reshape([-1,1])

@@ -51,6 +51,7 @@ ehthumbs_vista.db
 *.log
 *.json
 *.png
+*.txt
 
 *.swp
 *.tmp
