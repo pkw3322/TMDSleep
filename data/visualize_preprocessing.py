@@ -77,8 +77,8 @@ def create_stratified_cv_plot(df, target_col, n_splits=10, filename='stratified_
 def create_distribution_comparison_plot(df_before, df_after, col_name, filename='dist_comparison.png'):
     print(f"Generating distribution comparison plot for '{col_name}'...")
     plt.figure(figsize=(10, 6))
-    sns.histplot(df_before[col_name].dropna(), color="skyblue", label="Before Processing", kde=True, stat='density', alpha=0.6)
-    sns.histplot(df_after[col_name].dropna(), color="salmon", label="After Processing", kde=True, stat='density', alpha=0.6)
+    sns.histplot(df_before[col_name].dropna(), color="#a2d5ab", label="Before Processing", kde=True, stat='density', alpha=0.6)
+    sns.histplot(df_after[col_name].dropna(), color="#c3b1e1", label="After Processing", kde=True, stat='density', alpha=0.6)
     plt.title(f"Distribution of '{col_name}' Before vs. After Processing", fontsize=14)
     plt.xlabel(col_name)
     plt.legend()
@@ -90,13 +90,52 @@ def create_distribution_comparison_plot(df_before, df_after, col_name, filename=
 def create_correlation_heatmap(df, filename='corr_heatmap.png'):
     print("Generating correlation heatmap...")
     plt.figure(figsize=(12, 10))
+    
     corr_matrix = df.corr()
-    sns.heatmap(corr_matrix, cmap='coolwarm')
-    plt.title('Feature Correlation After Selection', fontsize=14)
+    
+    sns.heatmap(corr_matrix, cmap='coolwarm', annot=True, fmt='.1f',
+                annot_kws={"size": 7}, cbar_kws={"shrink": .8},
+                square=True, linewidths=.5)
+
+    plt.title('Feature Correlation After Selection', fontsize=14) # 제목 폰트 크기 조정
     plt.tight_layout()
     plt.savefig(filename, dpi=300)
     plt.close()
     print(f"Plot saved as '{filename}'\n")
+
+
+
+def generate_summary_table(df):
+    
+    summary_list = []
+    
+    for col in df.columns:
+        if df[col].nunique() > 10 and pd.api.types.is_numeric_dtype(df[col].dtype):
+            mean = df[col].mean()
+            std = df[col].std()
+            summary_list.append({
+                'Variable': col.strip(),
+                'Category': '',
+                'Value': f'{mean:.2f} ± {std:.2f}'
+            })
+        else:
+            s = df[col].astype(int)
+            counts = s.value_counts().sort_index()
+            percentages = s.value_counts(normalize=True).sort_index() * 100
+            
+            is_first = True
+            for category, count in counts.items():
+                percentage = percentages[category]
+                summary_list.append({
+                    'Variable': col.strip() if is_first else '',
+                    'Category': category,
+                    'Value': f'{count:,} ({percentage:.1f}%)'
+                })
+                is_first = False
+                
+    summary_df = pd.DataFrame(summary_list)
+    print("\n--- Descriptive Statistics Table (Table 1) ---")
+    print(summary_df.to_string(index=False))
 
 
 if __name__ == "__main__":
@@ -153,7 +192,13 @@ if __name__ == "__main__":
             create_distribution_comparison_plot(df_raw, df_processed, morning_type_col, filename='figure_5_dist_morning_person.png')
         else:
             print(f"Skipping '{morning_type_col}' plot: column not found. Please check the exact column name in your file.")
-
+        create_distribution_comparison_plot(df_raw, df_processed, 'VAS', filename='figure_5b_dist_vas.png')
+        create_distribution_comparison_plot(df_raw, df_processed, 'CMI', filename='figure_5c_dist_cmi.png')
+        
+        
         create_correlation_heatmap(df_processed, filename='figure_6_corr_heatmap.png')
 
         print("\nAll plots have been generated and saved successfully.")
+        
+        generate_summary_table(df_processed)
+    

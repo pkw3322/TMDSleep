@@ -2,6 +2,8 @@ import json
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from adjustText import adjust_text
+
 import seaborn as sns
 from matplotlib.lines import Line2D
 
@@ -106,11 +108,11 @@ def plot_performance_comparison(performance_df, p_values_df, scenario_title, fil
             
             sns.boxplot(x='Model', y='Value', data=subset, order=model_order,
                         hue='Model', palette=PALETTE, ax=ax, width=0.6, legend=False,
-                        boxprops=dict(edgecolor='black', alpha=0.7), medianprops=dict(color='black'),
-                        whiskerprops=dict(color='black', alpha=0.7), capprops=dict(color='black', alpha=0.7))
+                        boxprops=dict(edgecolor='black', alpha=0.8), medianprops=dict(color='black'),
+                        whiskerprops=dict(color='black', alpha=0.8), capprops=dict(color='black', alpha=0.8))
             
             sns.stripplot(x='Model', y='Value', data=subset, order=model_order,
-                          hue='Model', palette=PALETTE, ax=ax, alpha=0.7, dodge=True,
+                          hue='Model', palette=PALETTE, ax=ax, alpha=0.8, dodge=True,
                           edgecolor='black', linewidth=0.5, legend=False)
             
             ax.set_title(f'Target: {target} | Metric: {metric}', fontsize=14)
@@ -159,7 +161,7 @@ def plot_volcano(mi_df, filename):
 
     mi_df['-log10(p_value)'] = -np.log10(mi_df['p_value'].replace(0, 1e-300))
 
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=(10, 6))
     ax = sns.scatterplot(data=mi_df, x='mi_score', y='-log10(p_value)', 
                          hue='Model', style='Model', palette=PALETTE_LONG_NAME, s=100, alpha=0.8)
     
@@ -168,6 +170,14 @@ def plot_volcano(mi_df, filename):
                 scatter=False, lowess=True, ax=ax, 
                 line_kws={'color': 'grey', 'linestyle': ':'})
 
+    features_to_label = mi_df[(mi_df['p_value'] < 0.05) & (mi_df['mi_score'] > 0.1)]
+
+    texts = []
+    for i, row in features_to_label.iterrows():
+        texts.append(ax.text(row['mi_score'], row['-log10(p_value)'], row['feature'], fontsize=9))
+
+    adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle='->', color='gray', lw=0.5))
+        
     ax.set_title('Feature Significance and Informativeness (Volcano Plot)', fontsize=16)
     ax.set_xlabel('MI Score')
     ax.set_ylabel('-log10(p_value)')
@@ -207,10 +217,55 @@ def plot_reliable_features(mi_df, filename):
     df_filtered['Model'] = df_filtered['Model'].str.replace('_Model', '').str.replace('_', ' ')
 
     plt.figure(figsize=(10, len(feature_order) * 0.8 + 2))
-    sns.barplot(data=df_filtered, y='feature', x='mi_score', hue='Model', order=feature_order, palette=PALETTE, edgecolor='black')
+    sns.barplot(data=df_filtered, y='feature', x='mi_score', hue='Model', order=feature_order, palette=PALETTE, edgecolor='black', alpha=0.8)
     plt.title('Most Reliable Features (MI > 0.2 & p < 0.05)', fontsize=16); plt.xlabel('MI Score'); plt.ylabel('Feature')
     plt.tight_layout(); plt.savefig(filename, dpi=300); plt.close(); print(f"Plot saved as '{filename}'")
 
+
+def plot_complete_comparison(performance_df, filename="Complete_Performance_Comparison.png"):
+
+    if performance_df.empty:
+        print("No data available to plot.")
+        return
+
+    print(f"Generating complete performance comparison plot...")
+
+    hue_order = ['Full', 'Clinical Sleep', 'Clinical Only']
+    
+    g = sns.catplot(
+        data=performance_df,
+        x='Scenario', 
+        y='Value', 
+        hue='Model',
+        row='Metric', 
+        col='Target',
+        kind='bar',
+        palette=PALETTE,
+        height=5, 
+        aspect=1.2,
+        legend=True,
+        sharey=False,
+        order=['All Features', 'MI Top 20', 'Significant MI Features'],
+        hue_order=hue_order,
+        edgecolor='black'
+    )
+
+    g.fig.suptitle('Comprehensive Model Performance Comparison', fontsize=20, y=1.03)
+
+    g.map_dataframe(sns.stripplot, x='Scenario', y='Value', hue='Model', 
+                    dodge=True, palette=PALETTE, edgecolor='black', 
+                    linewidth=0.5, alpha=0.8, legend=False,
+                    order=['All Features', 'MI Top 20', 'Significant MI Features'],
+                    hue_order=['Full', 'Clinical Sleep', 'Clinical Only'])
+
+    g.set_axis_labels("Feature Selection Scenario", "Metric Value")
+    g.set_titles("Target: {col_name} | Metric: {row_name}")
+    g.set_xticklabels(["All Features", "MI Top 20", "Significant MI Features"], rotation=30, ha='right')
+
+    
+    plt.savefig(filename, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Plot saved as '{filename}'")
 
 
 if __name__ == '__main__':
@@ -234,5 +289,5 @@ if __name__ == '__main__':
     mi_data = load_all_mi_data(MODEL_NAMES)
     plot_volcano(mi_data, filename="Feature_Volcano_Plot.png")
     plot_reliable_features(mi_data, filename="Reliable_Features_Bar_Plot.png")
-
+    plot_complete_comparison(performance_data, filename="Overall_Model_Performance.png")
     print("\nAll visualization tasks are complete.")
