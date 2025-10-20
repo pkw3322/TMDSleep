@@ -12,9 +12,9 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 
 PALETTE_LONG_NAME = {
-    'Full_Model': '#75C8AE',
-    'Clinical_Sleep_Model': '#F79770',
-    'Clinical_Only_Model': '#98A9D0'
+    'Full_Model': '#95B1D2',
+    'Clinical_Sleep_Model': '#E7B43C',
+    'Clinical_Only_Model': '#E16D94'
 }
 
 def load_all_performance_data(model_names):
@@ -55,9 +55,9 @@ def load_all_mi_data(model_names):
     return pd.concat(all_mi_data, ignore_index=True)
 
 PALETTE = {
-    'Full': '#75C8AE',
-    'Clinical Sleep': '#F79770',
-    'Clinical Only': '#98A9D0'
+    'Full': "#95B1D2",
+    'Clinical Sleep': "#E7B43C",
+    'Clinical Only': "#E16D94"
 }
 
 
@@ -170,13 +170,13 @@ def plot_volcano(mi_df, filename):
                 scatter=False, lowess=True, ax=ax, 
                 line_kws={'color': 'grey', 'linestyle': ':'})
 
-    features_to_label = mi_df[(mi_df['p_value'] < 0.05) & (mi_df['mi_score'] > 0.1)]
+    features_to_label = mi_df[(mi_df['p_value'] < 0.05) & (mi_df['mi_score'] > 0.2)]
 
     texts = []
     for i, row in features_to_label.iterrows():
         texts.append(ax.text(row['mi_score'], row['-log10(p_value)'], row['feature'], fontsize=9))
 
-    adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle='->', color='gray', lw=0.5))
+    adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle='-', color='gray', lw=0.5))
         
     ax.set_title('Feature Significance and Informativeness (Volcano Plot)', fontsize=16)
     ax.set_xlabel('MI Score')
