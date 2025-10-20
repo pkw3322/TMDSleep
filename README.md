@@ -66,11 +66,13 @@ python main.py
 ├── data/
 │   └── data_preprocessing.py   # Script for data loading and preprocessing
 |   └── dataset.xlsx            # (Required) The raw data file
+|   └── visualize_preprocessing,py # Functions for data visualization
 ├── utils/
 │   ├── analysis_data.py        # Core analysis pipeline (MI, model evaluation)
 │   ├── estimate_MI_score.py    # Functions for Mutual Information calculation
 │   └── visualize_results.py    # Functions for results visualization
 ├── main.py                     # Main script to run the entire pipeline
+├── visualize_target_variables.py # Functions for target variables visualization
 ```
 
 ### Key File Descriptions
