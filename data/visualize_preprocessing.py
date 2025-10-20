@@ -1,13 +1,95 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
+from matplotlib.lines import Line2D
 import matplotlib.patches as mpatches
+
+import seaborn as sns
+
 from sklearn.model_selection import StratifiedKFold
 import warnings
 from data_preprocessing import preprocessing_data, get_features
 
 warnings.filterwarnings('ignore', category=FutureWarning)
+
+def map_psqi3_to_category_label(psqi3_value):
+    if pd.isna(psqi3_value): return 'Unknown'
+    psqi3_int = int(psqi3_value)
+    if psqi3_int == 0: return '≥7h'
+    elif psqi3_int == 1: return '6-7h'
+    elif psqi3_int == 2: return '5-6h'
+    elif psqi3_int == 3: return '<5h'
+    else: return 'Unknown'
+
+def plot_psqi3_vs_pain_violin_point(df, filename_cmi="PSQI3_vs_CMI_ViolinPoint.png", filename_vas="PSQI3_vs_VAS_ViolinPoint.png"):
+    if 'PSQI3' not in df.columns or 'CMI' not in df.columns or 'VAS' not in df.columns:
+        print("Error: Required columns ('PSQI3', 'CMI', 'VAS') not found.")
+        return
+
+    df['PSQI3_numeric'] = pd.to_numeric(df['PSQI3'], errors='coerce')
+    df_plot = df.dropna(subset=['PSQI3_numeric', 'CMI', 'VAS']).copy()
+    df_plot['PSQI3_numeric'] = df_plot['PSQI3_numeric'].astype(int)
+    df_plot['Sleep Duration Label'] = df_plot['PSQI3_numeric'].apply(map_psqi3_to_category_label)
+    category_order = ['≥7h', '6-7h', '5-6h', '<5h']
+    valid_order = [cat for cat in category_order if cat in df_plot['Sleep Duration Label'].unique()]
+    df_plot['Sleep Duration Label'] = pd.Categorical(df_plot['Sleep Duration Label'], categories=valid_order, ordered=True)
+
+    if df_plot.empty:
+        print("No valid data points after handling PSQI3."); return
+
+    print(f"Generating Violin + Point plot (Pastel) for PSQI3 vs. CMI...")
+    fig_cmi, ax_cmi = plt.subplots(figsize=(10, 7))
+    fig_cmi.suptitle('(A) Sleep Duration vs. CMI', fontsize=16, y=0.98)
+
+    sns.violinplot(x='Sleep Duration Label', y='CMI', data=df_plot, ax=ax_cmi, palette='GnBu',
+                   order=valid_order, inner=None, linewidth=1.5, cut=0, alpha=0.7)
+    sns.pointplot(x='Sleep Duration Label', y='CMI', data=df_plot, ax=ax_cmi,
+                  order=valid_order, color='grey', markers='o', linestyles='-',
+                  errorbar='ci', capsize=.3, label='Mean Score Trend', alpha=0.7)
+    sns.stripplot(x='Sleep Duration Label', y='CMI', data=df_plot, ax=ax_cmi, color='lightgrey',
+                  alpha=0.1, jitter=0.25, order=valid_order, s=3)
+
+    ax_cmi.set_title('')
+    ax_cmi.set_xlabel('Sleep Duration Category (from PSQI3)')
+    ax_cmi.set_ylabel('CMI Score (Clinician-Assessed)')
+    ax_cmi.tick_params(axis='x')
+    handles_cmi, labels_cmi = ax_cmi.get_legend_handles_labels()
+    pointplot_handles_cmi = [h for h, l in zip(handles_cmi, labels_cmi) if isinstance(h, Line2D) and h.get_color() == 'grey']
+    if pointplot_handles_cmi:
+         ax_cmi.legend(handles=pointplot_handles_cmi, labels=['Mean Score Trend'], loc='upper right')
+    ax_cmi.grid(True, linestyle=':', alpha=0.6)
+
+    plt.tight_layout(rect=(0, 0.03, 1, 0.95))
+    plt.savefig(filename_cmi, dpi=300)
+    plt.close(fig_cmi)
+    print(f"CMI Plot saved as '{filename_cmi}'")
+
+    print(f"Generating Violin + Point plot (Pastel) for PSQI3 vs. VAS...")
+    fig_vas, ax_vas = plt.subplots(figsize=(10, 7))
+    fig_vas.suptitle('(B) Sleep Duration vs. VAS', fontsize=16, y=0.98)
+
+    sns.violinplot(x='Sleep Duration Label', y='VAS', data=df_plot, ax=ax_vas, palette='OrRd',
+                   order=valid_order, inner=None, linewidth=1.5, cut=0, alpha=0.7)
+    sns.pointplot(x='Sleep Duration Label', y='VAS', data=df_plot, ax=ax_vas,
+                  order=valid_order, color='grey', markers='o', linestyles='-',
+                  errorbar='ci', capsize=.3, label='Mean Score Trend', alpha=0.7)
+    sns.stripplot(x='Sleep Duration Label', y='VAS', data=df_plot, ax=ax_vas, color='lightgrey',
+                  alpha=0.1, jitter=0.25, order=valid_order, s=3)
+
+    ax_vas.set_title('')
+    ax_vas.set_xlabel('Sleep Duration Category (from PSQI3)')
+    ax_vas.set_ylabel('VAS Score (Patient-Reported)')
+    ax_vas.tick_params(axis='x')
+    handles_vas, labels_vas = ax_vas.get_legend_handles_labels()
+    pointplot_handles_vas = [h for h, l in zip(handles_vas, labels_vas) if isinstance(h, Line2D) and h.get_color() == 'grey']
+    if pointplot_handles_vas:
+         ax_vas.legend(handles=pointplot_handles_vas, labels=['Mean Score Trend'], loc='upper right')
+    ax_vas.grid(True, linestyle=':', alpha=0.6)
+
+    plt.tight_layout(rect=(0, 0.03, 1, 0.95))
+    plt.savefig(filename_vas, dpi=300)
+    plt.close(fig_vas)
+    print(f"VAS Plot saved as '{filename_vas}'")
 
 def create_stratified_cv_plot(df, target_col, n_splits=10, filename='stratified_cv_plot.png'):
     print(f"Generating corrected Stratified CV plot for '{target_col}'...")
@@ -201,4 +283,5 @@ if __name__ == "__main__":
         print("\nAll plots have been generated and saved successfully.")
         
         generate_summary_table(df_processed)
-    
+        
+        plot_psqi3_vs_pain_violin_point(df_processed)
